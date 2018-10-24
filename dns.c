@@ -14,8 +14,10 @@
 
 #define INTERFACE_NAME "wlp2s0"
 
-#define GATEWAY_IP 192.168.0.1
-#define TARGET_IP 192.168.0.2
+//#define GATEWAY_IP "192.168.0.1"
+//#define TARGET_IP "192.168.0.2"
+#define GATEWAY_IP "1.1.1.1"
+#define TARGET_IP "8.8.8.8"
 
 char local_mac[6];
 
@@ -39,6 +41,13 @@ void get_local_mac(int sock) {
     printf("\n");
 }
 
+void ping_ip(const char* ip) {
+    char combined[200];
+    memset(combined, 0, 200);
+    snprintf(combined, 199, "ping -c 1 %s > /dev/null 2> /dev/null", ip);
+    system(combined);
+}
+
 int main(void) {
     if (setuid(0)) {
         perror("setuid");
@@ -49,9 +58,16 @@ int main(void) {
         exit(EXIT_FAILURE);
     }
 
+    //Zero out to detect if they've been set
+    memset(gateway_mac, 0, 6);
+    memset(target_mac, 0, 6);
+
     int pack_sock = socket(AF_PACKET, SOCK_RAW, 0);
 
     get_local_mac(pack_sock);
+
+    ping_ip(GATEWAY_IP);
+    ping_ip(TARGET_IP);
 
     return EXIT_SUCCESS;
 }
