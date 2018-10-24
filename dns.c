@@ -24,6 +24,9 @@ char local_mac[6];
 char gateway_mac[6];
 char target_mac[6];
 
+uint32_t gateway_ip;
+uint32_t target_ip;
+
 void get_local_mac(int sock) {
     struct ifreq s;
     memset(&s, 0, sizeof(struct ifreq));
@@ -48,6 +51,13 @@ void ping_ip(const char* ip) {
     system(combined);
 }
 
+uint32_t convert_ip_to_int(const char* ip) {
+    unsigned int a, b, c, d;
+    sscanf(ip, "%u.%u.%u.%u", (unsigned int*) &a, (unsigned int*) &b, (unsigned int*) &c,
+            (unsigned int*) &d);
+    return a | (b << 8) | (c << 16) | (d << 24);
+}
+
 int main(void) {
     if (setuid(0)) {
         perror("setuid");
@@ -62,12 +72,18 @@ int main(void) {
     memset(gateway_mac, 0, 6);
     memset(target_mac, 0, 6);
 
+    gateway_ip = convert_ip_to_int(GATEWAY_IP);
+    target_ip = convert_ip_to_int(TARGET_IP);
+
     int pack_sock = socket(AF_PACKET, SOCK_RAW, 0);
 
     get_local_mac(pack_sock);
 
     ping_ip(GATEWAY_IP);
     ping_ip(TARGET_IP);
+
+    printf("%08x\n", gateway_ip);
+    printf("%08x\n", target_ip);
 
     return EXIT_SUCCESS;
 }
