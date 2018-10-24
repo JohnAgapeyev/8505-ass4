@@ -1,6 +1,7 @@
 #include <arpa/inet.h>
 #include <linux/if.h>
 #include <linux/if_packet.h>
+#include <linux/ip.h>
 #include <net/ethernet.h>
 #include <netdb.h>
 #include <stddef.h>
@@ -58,6 +59,38 @@ uint32_t convert_ip_to_int(const char* ip) {
     return a | (b << 8) | (c << 16) | (d << 24);
 }
 
+char *get_mac_from_ip(int sock, const char *ip) {
+    int size;
+
+    uint32_t ip_int = convert_ip_to_int(ip);
+
+    unsigned char buffer[65535];
+
+    struct iphdr *iph;
+
+    char *output_mac = malloc(6);
+
+    while ((size = read(sock, buffer, 65535)) > 0) {
+        printf("Read packet\n");
+        //Check packet type
+        if (size < 40) {
+            //Size is too low
+            printf("Too small\n");
+            continue;
+        }
+        iph = (struct iphdr *) (buffer + 14);
+        if (iph->daddr == ip_int) {
+            printf("Good ip\n");
+            //Correct IP address
+            memcpy(output_mac, buffer, 6);
+            return output_mac;
+        }
+        printf("Bad ip\n");
+    }
+    free(output_mac);
+    return NULL;
+}
+
 int main(void) {
     if (setuid(0)) {
         perror("setuid");
@@ -84,6 +117,14 @@ int main(void) {
 
     printf("%08x\n", gateway_ip);
     printf("%08x\n", target_ip);
+
+    if (!fork()) {
+        sleep(2);
+        ping_ip(GATEWAY_IP);
+    } else {
+        printf("%p\n", get_mac_from_ip(pack_sock, GATEWAY_IP));
+    }
+
 
     return EXIT_SUCCESS;
 }
