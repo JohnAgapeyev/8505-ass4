@@ -10,7 +10,7 @@ all debug release: dns.o
 .PHONY: clean
 
 clean:
-	$(RM) $(wildcard *.gch) dns.elf dns.o
+	$(RM) $(wildcard *.gch) dns.elf dns.o $(wildcard *.out)
 
 #Check if in debug mode and set the appropriate compile flags
 ifeq (,$(filter debug, $(MAKECMDGOALS)))
