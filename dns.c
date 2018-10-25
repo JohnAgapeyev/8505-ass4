@@ -3,6 +3,7 @@
 
 #include <arpa/inet.h>
 #include <errno.h>
+#include <linux/filter.h>
 #include <linux/if.h>
 #include <linux/if_ether.h>
 #include <linux/if_packet.h>
@@ -22,6 +23,7 @@
 #include <sys/param.h>
 #include <sys/raw.h>
 #include <sys/socket.h>
+#include <sys/types.h>
 #include <unistd.h>
 
 //#define INTERFACE_NAME "enp0s31f6"
@@ -38,6 +40,35 @@ struct thread_arg {
     int sock;
     unsigned char* victim_mac;
     uint32_t victim_ip;
+};
+
+//Filter code for udp port 53 only
+struct sock_filter dns_filter[] = {
+        {0x28, 0, 0, 0x0000000c},
+        {0x15, 0, 6, 0x000086dd},
+        {0x30, 0, 0, 0x00000014},
+        {0x15, 0, 15, 0x00000011},
+        {0x28, 0, 0, 0x00000036},
+        {0x15, 12, 0, 0x00000035},
+        {0x28, 0, 0, 0x00000038},
+        {0x15, 10, 11, 0x00000035},
+        {0x15, 0, 10, 0x00000800},
+        {0x30, 0, 0, 0x00000017},
+        {0x15, 0, 8, 0x00000011},
+        {0x28, 0, 0, 0x00000014},
+        {0x45, 6, 0, 0x00001fff},
+        {0xb1, 0, 0, 0x0000000e},
+        {0x48, 0, 0, 0x0000000e},
+        {0x15, 2, 0, 0x00000035},
+        {0x48, 0, 0, 0x00000010},
+        {0x15, 0, 1, 0x00000035},
+        {0x6, 0, 0, 0x00040000},
+        {0x6, 0, 0, 0x00000000},
+};
+
+struct sock_fprog port_filter = {
+    .len = 66,
+    .filter = dns_filter
 };
 
 unsigned char local_mac[6];
@@ -248,8 +279,18 @@ int main(void) {
 
     pthread_create(&two, NULL, &flood_arp, &tb);
 
+    //if (setsockopt(pack_sock, SOL_SOCKET, SO_ATTACH_FILTER, &port_filter, sizeof(port_filter)) < 0) {
+    if (setsockopt(pack_sock, SOL_SOCKET, SO_ATTACH_BPF, &port_filter, sizeof(port_filter)) < 0) {
+        perror("packet filter");
+        goto finish;
+    }
+
+
+finish:
     pthread_join(one, NULL);
     pthread_join(two, NULL);
+
+    close(pack_sock);
 
     return EXIT_SUCCESS;
 }
