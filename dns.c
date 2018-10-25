@@ -16,10 +16,10 @@
 
 #define INTERFACE_NAME "enp0s31f6"
 
-//#define GATEWAY_IP "192.168.0.1"
-//#define TARGET_IP "192.168.0.2"
-#define GATEWAY_IP "1.1.1.1"
-#define TARGET_IP "8.8.8.8"
+#define GATEWAY_IP "192.168.0.1"
+#define TARGET_IP "192.168.0.4"
+//#define GATEWAY_IP "1.1.1.1"
+//#define TARGET_IP "8.8.8.8"
 
 unsigned char local_mac[6];
 
@@ -126,12 +126,18 @@ int main(void) {
     printf("%08x\n", gateway_ip);
     printf("%08x\n", target_ip);
 
-    unsigned char m[30];
-    if (get_mac_from_ip(pack_sock, GATEWAY_IP, m)) {
+    if (get_mac_from_ip(pack_sock, GATEWAY_IP, gateway_mac)) {
         perror("Initial gateway mac read");
         exit(EXIT_FAILURE);
     }
-    printf("%02x %02x %02x %02x %02x %02x\n", m[0], m[1], m[2], m[3], m[4], m[5]);
+    printf("%02x %02x %02x %02x %02x %02x\n", gateway_mac[0], gateway_mac[1], gateway_mac[2],
+            gateway_mac[3], gateway_mac[4], gateway_mac[5]);
+    if (get_mac_from_ip(pack_sock, TARGET_IP, target_mac)) {
+        perror("Initial gateway mac read");
+        exit(EXIT_FAILURE);
+    }
+    printf("%02x %02x %02x %02x %02x %02x\n", target_mac[0], target_mac[1], target_mac[2],
+            target_mac[3], target_mac[4], target_mac[5]);
 
     return EXIT_SUCCESS;
 }
