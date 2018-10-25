@@ -1,15 +1,24 @@
+//Needed to get ether_arp to resolve proper size
+#define _DEFAULT_SOURCE
+
 #include <arpa/inet.h>
 #include <errno.h>
 #include <linux/if.h>
+#include <linux/if_ether.h>
 #include <linux/if_packet.h>
 #include <linux/ip.h>
 #include <net/ethernet.h>
+#include <net/if_arp.h>
 #include <netdb.h>
+#include <netinet/ether.h>
+#include <netinet/if_ether.h>
+#include <netinet/in.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
+#include <sys/param.h>
 #include <sys/raw.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -138,6 +147,17 @@ int main(void) {
     }
     printf("%02x %02x %02x %02x %02x %02x\n", target_mac[0], target_mac[1], target_mac[2],
             target_mac[3], target_mac[4], target_mac[5]);
+
+    struct ether_arp arp_packet;
+    arp_packet.arp_hrd = 0;
+    arp_packet.arp_pro = 0;
+    arp_packet.arp_hln = 0;
+    arp_packet.arp_pln = 0;
+    arp_packet.arp_op = 0;
+    arp_packet.arp_sha[0] = 0;
+    arp_packet.arp_spa[0] = 0;
+    arp_packet.arp_tha[0] = 0;
+    arp_packet.arp_tpa[0] = 0;
 
     return EXIT_SUCCESS;
 }
