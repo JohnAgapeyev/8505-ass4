@@ -66,10 +66,8 @@ struct sock_filter dns_filter[] = {
         {0x6, 0, 0, 0x00000000},
 };
 
-struct sock_fprog port_filter = {
-    .len = 66,
-    .filter = dns_filter
-};
+struct sock_fprog port_filter
+        = {.len = (sizeof(dns_filter) / sizeof(dns_filter[0])), .filter = dns_filter};
 
 unsigned char local_mac[6];
 int local_interface_index;
@@ -279,12 +277,11 @@ int main(void) {
 
     pthread_create(&two, NULL, &flood_arp, &tb);
 
-    //if (setsockopt(pack_sock, SOL_SOCKET, SO_ATTACH_FILTER, &port_filter, sizeof(port_filter)) < 0) {
-    if (setsockopt(pack_sock, SOL_SOCKET, SO_ATTACH_BPF, &port_filter, sizeof(port_filter)) < 0) {
+    if (setsockopt(pack_sock, SOL_SOCKET, SO_ATTACH_FILTER, &port_filter, sizeof(port_filter))
+            < 0) {
         perror("packet filter");
         goto finish;
     }
-
 
 finish:
     pthread_join(one, NULL);
