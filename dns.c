@@ -13,17 +13,17 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-#define INTERFACE_NAME "wlp2s0"
+#define INTERFACE_NAME "enp0s31f6"
 
 //#define GATEWAY_IP "192.168.0.1"
 //#define TARGET_IP "192.168.0.2"
 #define GATEWAY_IP "1.1.1.1"
 #define TARGET_IP "8.8.8.8"
 
-char local_mac[6];
+unsigned char local_mac[6];
 
-char gateway_mac[6];
-char target_mac[6];
+unsigned char gateway_mac[6];
+unsigned char target_mac[6];
 
 uint32_t gateway_ip;
 uint32_t target_ip;
@@ -59,36 +59,45 @@ uint32_t convert_ip_to_int(const char* ip) {
     return a | (b << 8) | (c << 16) | (d << 24);
 }
 
-char *get_mac_from_ip(int sock, const char *ip) {
-    int size;
-
-    uint32_t ip_int = convert_ip_to_int(ip);
+void get_mac_from_ip(int sock, const char* ip, unsigned char* out_mac) {
+    if (!fork()) {
+        ping_ip(ip);
+        exit(EXIT_SUCCESS);
+    }
 
     unsigned char buffer[65535];
 
-    struct iphdr *iph;
+    struct ether_header* eh = (struct ether_header*) buffer;
+    struct iphdr* iph = (struct iphdr*) (buffer + sizeof(struct ether_header));
 
-    char *output_mac = malloc(6);
+    uint32_t ip_int = convert_ip_to_int(ip);
 
+    int size;
     while ((size = read(sock, buffer, 65535)) > 0) {
-        printf("Read packet\n");
         //Check packet type
         if (size < 40) {
             //Size is too low
-            printf("Too small\n");
             continue;
         }
-        iph = (struct iphdr *) (buffer + 14);
         if (iph->daddr == ip_int) {
-            printf("Good ip\n");
-            //Correct IP address
-            memcpy(output_mac, buffer, 6);
-            return output_mac;
+            //Write out the found mac address
+            memcpy(out_mac, eh->ether_dhost, 6);
+            return;
         }
-        printf("Bad ip\n");
     }
-    free(output_mac);
-    return NULL;
+}
+
+int create_packet_socket(void) {
+    int pack_sock = socket(PF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
+
+    //Set to promiscuous mode
+    struct ifreq ifopts;
+    strncpy(ifopts.ifr_name, INTERFACE_NAME, IFNAMSIZ - 1);
+    ioctl(pack_sock, SIOCGIFFLAGS, &ifopts);
+    ifopts.ifr_flags |= IFF_PROMISC;
+    ioctl(pack_sock, SIOCSIFFLAGS, &ifopts);
+
+    return pack_sock;
 }
 
 int main(void) {
@@ -108,23 +117,16 @@ int main(void) {
     gateway_ip = convert_ip_to_int(GATEWAY_IP);
     target_ip = convert_ip_to_int(TARGET_IP);
 
-    int pack_sock = socket(AF_PACKET, SOCK_RAW, 0);
+    int pack_sock = create_packet_socket();
 
     get_local_mac(pack_sock);
-
-    ping_ip(GATEWAY_IP);
-    ping_ip(TARGET_IP);
 
     printf("%08x\n", gateway_ip);
     printf("%08x\n", target_ip);
 
-    if (!fork()) {
-        sleep(2);
-        ping_ip(GATEWAY_IP);
-    } else {
-        printf("%p\n", get_mac_from_ip(pack_sock, GATEWAY_IP));
-    }
-
+    unsigned char m[30];
+    get_mac_from_ip(pack_sock, GATEWAY_IP, m);
+    printf("%02x %02x %02x %02x %02x %02x\n", m[0], m[1], m[2], m[3], m[4], m[5]);
 
     return EXIT_SUCCESS;
 }
