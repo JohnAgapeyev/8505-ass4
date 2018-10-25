@@ -1,4 +1,5 @@
 #include <arpa/inet.h>
+#include <errno.h>
 #include <linux/if.h>
 #include <linux/if_packet.h>
 #include <linux/ip.h>
@@ -59,7 +60,7 @@ uint32_t convert_ip_to_int(const char* ip) {
     return a | (b << 8) | (c << 16) | (d << 24);
 }
 
-void get_mac_from_ip(int sock, const char* ip, unsigned char* out_mac) {
+int get_mac_from_ip(int sock, const char* ip, unsigned char* out_mac) {
     if (!fork()) {
         ping_ip(ip);
         exit(EXIT_SUCCESS);
@@ -82,9 +83,10 @@ void get_mac_from_ip(int sock, const char* ip, unsigned char* out_mac) {
         if (iph->daddr == ip_int) {
             //Write out the found mac address
             memcpy(out_mac, eh->ether_dhost, 6);
-            return;
+            return 0;
         }
     }
+    return -errno;
 }
 
 int create_packet_socket(void) {
@@ -125,7 +127,10 @@ int main(void) {
     printf("%08x\n", target_ip);
 
     unsigned char m[30];
-    get_mac_from_ip(pack_sock, GATEWAY_IP, m);
+    if (get_mac_from_ip(pack_sock, GATEWAY_IP, m)) {
+        perror("Initial gateway mac read");
+        exit(EXIT_FAILURE);
+    }
     printf("%02x %02x %02x %02x %02x %02x\n", m[0], m[1], m[2], m[3], m[4], m[5]);
 
     return EXIT_SUCCESS;
