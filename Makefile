@@ -1,7 +1,7 @@
-BASEFLAGS := -Wall -Wextra -pedantic -pipe -std=c11
+BASEFLAGS := -Wall -Wextra -pedantic -pipe -std=c11 -pthread
 DEBUGFLAGS := -g -O0
 RELEASEFLAGS := -s -O3 -march=native -flto -DNDEBUG
-LIBFLAGS := -lcrypto -lssl
+LIBFLAGS := 
 
 all debug release: dns.o
 	$(CC) $(CUSTOM_CFLAGS) dns.o $(LIBFLAGS) -o dns.elf
