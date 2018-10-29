@@ -309,37 +309,25 @@ uint16_t udp_checksum(
     return (uint16_t) ~sum;
 }
 
+//http://minirighi.sourceforge.net/html/ip_8c-source.html
 unsigned short csum(unsigned short* buf, int nwords) {
-#if 1
-    unsigned long sum;
-    for (sum = 0; nwords > 0; nwords--) {
-        sum += *buf++;
-    }
-    sum = (sum >> 16) + (sum & 0xffff);
-    sum += (sum >> 16);
-    return ~sum;
-#else
-    long sum;
-    unsigned short oddbyte;
-    short answer;
+    unsigned long sum = 0;
+    const uint16_t* ip1;
 
-    sum = 0;
+    ip1 = buf;
     while (nwords > 1) {
-        sum += *buf++;
+        sum += *ip1++;
+        if (sum & 0x80000000) {
+            sum = (sum & 0xFFFF) + (sum >> 16);
+        }
         nwords -= 2;
     }
-    if (nwords == 1) {
-        oddbyte = 0;
-        *((u_char*) &oddbyte) = *(u_char*) buf;
-        sum += oddbyte;
+
+    while (sum >> 16) {
+        sum = (sum & 0xFFFF) + (sum >> 16);
     }
 
-    sum = (sum >> 16) + (sum & 0xffff);
-    sum = sum + (sum >> 16);
-    answer = (short) ~sum;
-
-    return (answer);
-#endif
+    return (~sum);
 }
 
 void spoof_dns(int sock) {
@@ -379,19 +367,23 @@ void spoof_dns(int sock) {
         ih->saddr = recv_ih->daddr;
         ih->daddr = recv_ih->saddr;
         ih->tot_len = htons(20 + sizeof(struct udphdr) + data_len);
-        ih->id = htons(ntohs(recv_ih->id) + 1);
+        //ih->id = htons(ntohs(recv_ih->id) + 1);
+        ih->id = recv_ih->id;
         ih->ttl = recv_ih->ttl;
         //Calculate ip checksum
-        ih->check = csum((unsigned short*) ih, ih->tot_len);
+        ih->check = 0;
+        ih->check = csum((unsigned short*) ih, sizeof(struct iphdr));
 
+        uh->len = htons(data_len + sizeof(struct udphdr));
+#if 0
         //UDP stuffs
         uh->source = recv_uh->dest;
         uh->dest = recv_uh->source;
-        uh->len = htons(data_len + sizeof(struct udphdr));
 
         //Calculate udp checksum
         //uh->check = udp_checksum(uh, data_len, ih->saddr, ih->daddr);
         uh->check = htons(1337);
+#endif
 
         struct sockaddr_ll addr = {0};
         addr.sll_family = AF_PACKET;
