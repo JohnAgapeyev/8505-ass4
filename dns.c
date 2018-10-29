@@ -30,12 +30,8 @@
 //#define INTERFACE_NAME "enp0s31f6"
 #define INTERFACE_NAME "wlp2s0"
 
-//#define GATEWAY_IP "192.168.0.1"
-//#define TARGET_IP "192.168.0.6"
-#define GATEWAY_IP "1.1.1.1"
-#define TARGET_IP "8.8.8.8"
-//#define GATEWAY_IP "142.232.49.6"
-//#define TARGET_IP "142.232.48.123"
+#define GATEWAY_IP "192.168.0.1"
+#define TARGET_IP "192.168.0.6"
 
 struct thread_arg {
     int sock;
