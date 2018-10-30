@@ -327,7 +327,7 @@ uint16_t check_udp_sum(uint8_t* buffer, int len) {
 }
 
 void spoof_dns(int sock) {
-    unsigned char buffer[65535];
+    unsigned char buffer[512];
     struct ether_header* eh = (struct ether_header*) buffer;
     struct iphdr* ih = (struct iphdr*) (buffer + sizeof(struct ether_header));
     struct udphdr* uh
@@ -335,7 +335,7 @@ void spoof_dns(int sock) {
     unsigned char* data
             = (buffer + sizeof(struct ether_header) + sizeof(struct iphdr) + sizeof(struct udphdr));
 
-    unsigned char recv_buffer[65535];
+    unsigned char recv_buffer[512];
     struct ether_header* recv_eh = (struct ether_header*) recv_buffer;
     struct iphdr* recv_ih = (struct iphdr*) (recv_buffer + sizeof(struct ether_header));
     struct udphdr* recv_uh
@@ -344,7 +344,7 @@ void spoof_dns(int sock) {
             + sizeof(struct udphdr));
 
     //Zero buffer for defaults
-    memset(buffer, 0x00, 65535);
+    memset(buffer, 0x00, 512);
 
     //Initial constant packet settings
 
@@ -377,7 +377,7 @@ void spoof_dns(int sock) {
 
     int size;
     int data_len;
-    while ((size = read(sock, recv_buffer, 65535)) > 0) {
+    while ((size = read(sock, recv_buffer, 512)) > 0) {
         if (ntohs(recv_uh->source) == 53) {
             //Ignore responding to legit dns repsonses
             continue;
