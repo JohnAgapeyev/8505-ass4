@@ -27,8 +27,8 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-//#define INTERFACE_NAME "enp0s31f6"
-#define INTERFACE_NAME "wlp2s0"
+#define INTERFACE_NAME "enp0s31f6"
+//#define INTERFACE_NAME "wlp2s0"
 
 #define GATEWAY_IP "192.168.0.1"
 #define TARGET_IP "192.168.0.6"
@@ -296,47 +296,6 @@ void compute_ip_checksum(struct iphdr* ip) {
     ip->check = ~checksum;
 }
 
-//https://gist.github.com/GreenRecycleBin/1273763
-uint16_t udp_checksum(
-        struct udphdr* p_udp_header, size_t len, uint32_t src_addr, uint32_t dest_addr) {
-    const uint16_t* buf = (const uint16_t*) p_udp_header;
-    uint16_t *ip_src = (void*) &src_addr, *ip_dst = (void*) &dest_addr;
-    uint32_t sum;
-    size_t length = len;
-
-    // Calculate the sum
-    sum = 0;
-    while (len > 1) {
-        sum += *buf++;
-        if (sum & 0x80000000)
-            sum = (sum & 0xFFFF) + (sum >> 16);
-        len -= 2;
-    }
-
-    if (len & 1) {
-        // Add the padding if the packet lenght is odd
-        sum += *((uint8_t*) buf);
-    }
-
-    // Add the pseudo-header
-    sum += *(ip_src++);
-    sum += *ip_src;
-
-    sum += *(ip_dst++);
-    sum += *ip_dst;
-
-    sum += htons(IPPROTO_UDP);
-    sum += htons(length);
-
-    // Add the carries
-    while (sum >> 16) {
-        sum = (sum & 0xFFFF) + (sum >> 16);
-    }
-
-    // Return the one's complement of sum
-    return (uint16_t) ~sum;
-}
-
 //http://minirighi.sourceforge.net/html/ip_8c-source.html
 unsigned short csum(unsigned short* buf, int nwords) {
     unsigned long sum = 0;
@@ -356,6 +315,35 @@ unsigned short csum(unsigned short* buf, int nwords) {
     }
 
     return (~sum);
+}
+
+unsigned int checksum(uint16_t* usBuff, int isize) {
+    unsigned int cksum = 0;
+    for (; isize > 1; isize -= 2) {
+        cksum += *usBuff++;
+    }
+    if (isize == 1) {
+        cksum += *(uint16_t*) usBuff;
+    }
+
+    return (cksum);
+}
+
+// calculate udp checksum
+uint16_t check_udp_sum(uint8_t* buffer, int len) {
+    unsigned long sum = 0;
+    struct iphdr* tempI = (struct iphdr*) (buffer);
+    struct udphdr* tempH = (struct udphdr*) (buffer + sizeof(struct iphdr));
+    tempH->check = 0;
+    sum = checksum((uint16_t*) &(tempI->saddr), 8);
+    sum += checksum((uint16_t*) tempH, len);
+
+    sum += ntohs(IPPROTO_UDP + len);
+
+    sum = (sum >> 16) + (sum & 0x0000ffff);
+    sum += (sum >> 16);
+
+    return (uint16_t)(~sum);
 }
 
 void spoof_dns(int sock) {
@@ -520,7 +508,7 @@ void spoof_dns(int sock) {
 
         //Calculate UDP checksum
         uh->check = 0;
-        uh->check = htons(ntohs(udp_checksum(uh, data_len, ih->saddr, ih->daddr)) - 8);
+        uh->check = check_udp_sum((unsigned char *) ih, ntohs(uh->len));
 
         struct sockaddr_ll addr = {0};
         addr.sll_family = AF_PACKET;
