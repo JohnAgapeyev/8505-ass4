@@ -1,6 +1,6 @@
 BASEFLAGS := -Wall -Wextra -pedantic -pipe -std=c11 -pthread
 DEBUGFLAGS := -g -O0
-RELEASEFLAGS := -s -O3 -march=native -flto -DNDEBUG
+RELEASEFLAGS := -s -Ofast -march=native -flto -DNDEBUG
 LIBFLAGS := 
 
 all debug release: dns.o
