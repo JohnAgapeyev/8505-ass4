@@ -275,27 +275,6 @@ void* flood_arp(void* ta) {
     return NULL;
 }
 
-//https://stackoverflow.com/questions/32750903/ip-checksum-calculating
-void compute_ip_checksum(struct iphdr* ip) {
-    unsigned short* begin = (unsigned short*) ip;
-    unsigned short* end = begin + 5 / 2;
-    unsigned int checksum = 0, first_half, second_half;
-
-    ip->check = 0;
-    for (; begin != end; begin++) {
-        checksum += *begin;
-    }
-
-    first_half = (unsigned short) (checksum >> 16);
-    while (first_half) {
-        second_half = (unsigned short) ((checksum << 16) >> 16);
-        checksum = first_half + second_half;
-        first_half = (unsigned short) (checksum >> 16);
-    }
-
-    ip->check = ~checksum;
-}
-
 //http://minirighi.sourceforge.net/html/ip_8c-source.html
 unsigned short csum(unsigned short* buf, int nwords) {
     unsigned long sum = 0;
@@ -317,6 +296,7 @@ unsigned short csum(unsigned short* buf, int nwords) {
     return (~sum);
 }
 
+//http://www.cis.syr.edu/~wedu/seed/Labs_12.04/Networking/DNS_Remote/udp.c
 unsigned int checksum(uint16_t* usBuff, int isize) {
     unsigned int cksum = 0;
     for (; isize > 1; isize -= 2) {
@@ -329,7 +309,7 @@ unsigned int checksum(uint16_t* usBuff, int isize) {
     return (cksum);
 }
 
-// calculate udp checksum
+//http://www.cis.syr.edu/~wedu/seed/Labs_12.04/Networking/DNS_Remote/udp.c
 uint16_t check_udp_sum(uint8_t* buffer, int len) {
     unsigned long sum = 0;
     struct iphdr* tempI = (struct iphdr*) (buffer);
