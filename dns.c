@@ -276,7 +276,7 @@ void* flood_arp(void* ta) {
 }
 
 //http://minirighi.sourceforge.net/html/ip_8c-source.html
-unsigned short csum(unsigned short* buf, int nwords) {
+inline unsigned short csum(const unsigned short* buf, int nwords) {
     unsigned long sum = 0;
     const uint16_t* ip1;
 
@@ -297,7 +297,7 @@ unsigned short csum(unsigned short* buf, int nwords) {
 }
 
 //http://www.cis.syr.edu/~wedu/seed/Labs_12.04/Networking/DNS_Remote/udp.c
-unsigned int checksum(uint16_t* usBuff, int isize) {
+inline unsigned int checksum(const uint16_t* usBuff, int isize) {
     unsigned int cksum = 0;
     for (; isize > 1; isize -= 2) {
         cksum += *usBuff++;
@@ -310,11 +310,10 @@ unsigned int checksum(uint16_t* usBuff, int isize) {
 }
 
 //http://www.cis.syr.edu/~wedu/seed/Labs_12.04/Networking/DNS_Remote/udp.c
-uint16_t check_udp_sum(uint8_t* buffer, int len) {
+inline uint16_t check_udp_sum(const uint8_t* buffer, int len) {
     unsigned long sum = 0;
-    struct iphdr* tempI = (struct iphdr*) (buffer);
-    struct udphdr* tempH = (struct udphdr*) (buffer + sizeof(struct iphdr));
-    tempH->check = 0;
+    const struct iphdr* tempI = (const struct iphdr*) (buffer);
+    const struct udphdr* tempH = (const struct udphdr*) (buffer + sizeof(struct iphdr));
     sum = checksum((uint16_t*) &(tempI->saddr), 8);
     sum += checksum((uint16_t*) tempH, len);
 
