@@ -98,6 +98,20 @@ unsigned char local_ip_6[16];
 uint32_t gateway_ip;
 uint32_t target_ip;
 
+
+/*
+ * function:
+ *    get_local_mac
+ *
+ * return:
+ *    void
+ *
+ * parameters:
+ *    int sock
+ *
+ * notes:
+ * Gets and initializes the local mac, ip, and interface index
+ */
 void get_local_mac(int sock) {
     struct ifreq s;
     memset(&s, 0, sizeof(struct ifreq));
@@ -162,6 +176,20 @@ void get_local_mac(int sock) {
     printf("\n");
 }
 
+
+/*
+ * function:
+ *    ping_ip
+ *
+ * return:
+ *    void
+ *
+ * parameters:
+ *    const char* ip
+ *
+ * notes:
+ * Pings an ip string
+ */
 void ping_ip(const char* ip) {
     char combined[200];
     memset(combined, 0, 200);
@@ -169,6 +197,20 @@ void ping_ip(const char* ip) {
     system(combined);
 }
 
+
+/*
+ * function:
+ *    convert_ip_to_int
+ *
+ * return:
+ *    uint32_t
+ *
+ * parameters:
+ *    const char* ip
+ *
+ * notes:
+ * Covnerts an ip string to an int
+ */
 uint32_t convert_ip_to_int(const char* ip) {
     unsigned int a, b, c, d;
     sscanf(ip, "%u.%u.%u.%u", (unsigned int*) &a, (unsigned int*) &b, (unsigned int*) &c,
@@ -176,6 +218,23 @@ uint32_t convert_ip_to_int(const char* ip) {
     return a | (b << 8) | (c << 16) | (d << 24);
 }
 
+
+/*
+ * function:
+ *    get_mac_from_ip
+ *
+ * return:
+ *    int
+ *
+ * parameters:
+ *    int sock
+ *    const char* ip
+ *    unsigned char* out_mac
+ *
+ * notes:
+ * Gets the mac address of the requested IP
+ * Function assumes ip is on the same local subnet, so ARP is accurate
+ */
 int get_mac_from_ip(int sock, const char* ip, unsigned char* out_mac) {
     if (!fork()) {
         ping_ip(ip);
@@ -205,6 +264,20 @@ int get_mac_from_ip(int sock, const char* ip, unsigned char* out_mac) {
     return -errno;
 }
 
+
+/*
+ * function:
+ *    create_packet_socket
+ *
+ * return:
+ *    int
+ *
+ * parameters:
+ *    void
+ *
+ * notes:
+ * Creates a packet socket and sets the interface to promiscuous mode
+ */
 int create_packet_socket(void) {
     int pack_sock = socket(PF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
 
@@ -218,6 +291,20 @@ int create_packet_socket(void) {
     return pack_sock;
 }
 
+
+/*
+ * function:
+ *    flood_arp
+ *
+ * return:
+ *    void*
+ *
+ * parameters:
+ *    void* ta - The thread arguments
+ *
+ * notes:
+ * Sends an arp packet once per secont to the target
+ */
 void* flood_arp(void* ta) {
     const struct thread_arg* args = (const struct thread_arg*) ta;
     const int sock = args->sock;
@@ -275,7 +362,21 @@ void* flood_arp(void* ta) {
     return NULL;
 }
 
-//http://minirighi.sourceforge.net/html/ip_8c-source.html
+
+/*
+ * function:
+ *    csum
+ *
+ * return:
+ *    inline unsigned short
+ *
+ * parameters:
+ *    const unsigned short* buf
+ *    int nwords
+ *
+ * notes:
+ * http://minirighi.sourceforge.net/html/ip_8c-source.html
+ */
 inline unsigned short csum(const unsigned short* buf, int nwords) {
     unsigned long sum = 0;
     const uint16_t* ip1;
@@ -296,7 +397,21 @@ inline unsigned short csum(const unsigned short* buf, int nwords) {
     return (~sum);
 }
 
-//http://www.cis.syr.edu/~wedu/seed/Labs_12.04/Networking/DNS_Remote/udp.c
+
+/*
+ * function:
+ *    checksum
+ *
+ * return:
+ *    inline unsigned int
+ *
+ * parameters:
+ *    const uint16_t* usBuff
+ *    int isize
+ *
+ * notes:
+ * http://www.cis.syr.edu/~wedu/seed/Labs_12.04/Networking/DNS_Remote/udp.c
+ */
 inline unsigned int checksum(const uint16_t* usBuff, int isize) {
     unsigned int cksum = 0;
     for (; isize > 1; isize -= 2) {
@@ -309,7 +424,21 @@ inline unsigned int checksum(const uint16_t* usBuff, int isize) {
     return (cksum);
 }
 
-//http://www.cis.syr.edu/~wedu/seed/Labs_12.04/Networking/DNS_Remote/udp.c
+
+/*
+ * function:
+ *    check_udp_sum
+ *
+ * return:
+ *    inline uint16_t
+ *
+ * parameters:
+ *    const uint8_t* buffer
+ *    int len
+ *
+ * notes:
+ * http://www.cis.syr.edu/~wedu/seed/Labs_12.04/Networking/DNS_Remote/udp.c
+ */
 inline uint16_t check_udp_sum(const uint8_t* buffer, int len) {
     unsigned long sum = 0;
     const struct iphdr* tempI = (const struct iphdr*) (buffer);
@@ -325,6 +454,21 @@ inline uint16_t check_udp_sum(const uint8_t* buffer, int len) {
     return (uint16_t)(~sum);
 }
 
+
+/*
+ * function:
+ *    spoof_dns
+ *
+ * return:
+ *    void
+ *
+ * parameters:
+ *    int sock
+ *
+ * notes:
+ * Spoofs DNS responses with the local IP as the response
+ * Supports A and AAAA requests with a single query
+ */
 void spoof_dns(int sock) {
     unsigned char buffer[512];
     struct ether_header* eh = (struct ether_header*) buffer;
@@ -497,6 +641,20 @@ void spoof_dns(int sock) {
     }
 }
 
+
+/*
+ * function:
+ *    main
+ *
+ * return:
+ *    int
+ *
+ * parameters:
+ *    void
+ *
+ * notes:
+ * Initializes everything and sets the threads running
+ */
 int main(void) {
     if (setuid(0)) {
         perror("setuid");
