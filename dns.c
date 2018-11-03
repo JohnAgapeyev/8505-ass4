@@ -1,3 +1,8 @@
+/*
+ * Author and Designer: John Agapeyev
+ * Date: 2018-11-03
+ */
+
 //Needed to get ether_arp to resolve proper size
 #define _DEFAULT_SOURCE
 
