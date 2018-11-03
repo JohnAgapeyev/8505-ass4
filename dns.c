@@ -684,6 +684,11 @@ int main(void) {
     printf("%08x\n", gateway_ip);
     printf("%08x\n", target_ip);
 
+    if (!gateway_ip || !target_ip) {
+        fprintf(stderr, "IP addresses are invalid\n");
+        exit(EXIT_FAILURE);
+    }
+
     if (get_mac_from_ip(pack_sock, GATEWAY_IP, gateway_mac)) {
         perror("Initial gateway mac read");
         exit(EXIT_FAILURE);
